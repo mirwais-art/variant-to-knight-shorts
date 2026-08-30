@@ -1,6 +1,11 @@
 name: Prepare Knight Short
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/make_short.py"
+      - ".github/workflows/prepare-short.yml"
   schedule:
     - cron: "15 2 * * *"
   workflow_dispatch:
