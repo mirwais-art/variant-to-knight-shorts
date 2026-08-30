@@ -60,7 +60,7 @@ def pick_video(entries, used):
 def download_video(url):
     run([
         "yt-dlp", "--no-playlist",
-        "--extractor-args", "youtube:player_client=mweb",
+        "--extractor-args", "youtube:player_client=web_embedded",
         "-f", "bv*[height<=1080]+ba/b[height<=1080]",
         "--merge-output-format", "mp4",
         "-o", "source.%(ext)s", url
