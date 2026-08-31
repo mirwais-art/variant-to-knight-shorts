@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 PAKISTAN = ZoneInfo("Asia/Karachi")
-DEFAULT_SLOTS = (time(13, 0), time(21, 0))
+DEFAULT_SLOTS = (time(10, 0), time(18, 0))
 
 
 @dataclass(frozen=True)
