@@ -13,6 +13,7 @@ import json
 import math
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -162,11 +163,24 @@ def clean_source_title(path: Path) -> str:
     return title[:65] or "VariantFPS Highlight"
 
 
-def render(candidate: Candidate, destination: Path, clip_seconds: int) -> None:
+def render(
+    candidate: Candidate,
+    destination: Path,
+    clip_seconds: int,
+    preset: str,
+    crf: int,
+) -> None:
+    if destination.exists():
+        try:
+            if duration_seconds(destination) >= clip_seconds - 0.25:
+                print(f"Reusing completed {destination.name}")
+                return
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            pass
     font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     filter_graph = (
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,gblur=sigma=28[bg];"
+        "[0:v]scale=540:960:force_original_aspect_ratio=increase,"
+        "crop=540:960,gblur=sigma=18,scale=1080:1920[bg];"
         "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
         "[bg][fg]overlay=(W-w)/2:(H-h)/2,"
         f"drawtext=fontfile={font}:text='CALM AIM. CLEAN FINISH.':"
@@ -198,9 +212,9 @@ def render(candidate: Candidate, destination: Path, clip_seconds: int) -> None:
             "-c:v",
             "libx264",
             "-preset",
-            "medium",
+            preset,
             "-crf",
-            "21",
+            str(crf),
             "-c:a",
             "aac",
             "-b:a",
@@ -230,6 +244,9 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--clip-seconds", type=int, default=20)
     parser.add_argument("--gap-seconds", type=int, default=3)
+    parser.add_argument("--preset", default="veryfast")
+    parser.add_argument("--crf", type=int, default=20)
+    parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--limit", type=int, help="Testing override; normally days x 2")
     args = parser.parse_args()
 
@@ -247,11 +264,28 @@ def main() -> None:
     selected = select_candidates(sources, target, args.clip_seconds, args.gap_seconds)
 
     args.output.mkdir(parents=True, exist_ok=True)
-    manifest_rows: list[dict[str, object]] = []
+    jobs: list[tuple[int, Candidate, datetime, str, Path]] = []
     for index, (candidate, publish_at) in enumerate(zip(selected, schedule), start=1):
         filename = f"{publish_at:%Y-%m-%d_%H%M}_{index:03d}.mp4"
-        destination = args.output / filename
-        render(candidate, destination, args.clip_seconds)
+        jobs.append((index, candidate, publish_at, filename, args.output / filename))
+
+    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
+        futures = [
+            executor.submit(
+                render,
+                candidate,
+                destination,
+                args.clip_seconds,
+                args.preset,
+                args.crf,
+            )
+            for _, candidate, _, _, destination in jobs
+        ]
+        for future in futures:
+            future.result()
+
+    manifest_rows: list[dict[str, object]] = []
+    for index, candidate, publish_at, filename, _ in jobs:
         source_title = clean_source_title(candidate.source)
         title = f"Calm Aim. Clean Finish. #{index:02d} 🎯 #valorant #shorts"
         description = (
